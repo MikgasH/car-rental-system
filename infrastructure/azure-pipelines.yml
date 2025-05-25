@@ -6,7 +6,7 @@ trigger:
 
 variables:
   pythonVersion: '3.12'
-  workingDirectory: 'services/user-service'
+  workingDirectory: 'services/user_service'
 
 stages:
 # STAGE 1: BUILD

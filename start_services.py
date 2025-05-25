@@ -11,7 +11,7 @@ def start_service(service_name, port, script_path):
         print(f"🚀 Starting {service_name} on port {port}...")
 
         if not os.path.exists(script_path):
-            print(f"❌ File not found: {script_path}")
+            print(f"✗ File not found: {script_path}")
             return None
 
         service_dir = os.path.dirname(script_path)
@@ -24,10 +24,10 @@ def start_service(service_name, port, script_path):
             sys.executable, script_name
         ], cwd=service_dir)
 
-        print(f"✅ {service_name} started with PID {process.pid}")
+        print(f"✓ {service_name} started with PID {process.pid}")
         return process
     except Exception as e:
-        print(f"❌ Failed to start {service_name}: {e}")
+        print(f"✗ Failed to start {service_name}: {e}")
         return None
 
 
@@ -37,7 +37,7 @@ def main():
     print("=" * 50)
 
     if not Path(".env").exists():
-        print("❌ .env file not found! Please create it first.")
+        print("✗ .env file not found! Please create it first.")
         return
 
     services = []
@@ -47,19 +47,19 @@ def main():
         {
             "name": "User Service",
             "port": 5001,
-            "path": "services/user-service/app.py",
+            "path": "services/user_service/app.py",
             "url": "http://localhost:5001"
         },
         {
             "name": "Car Service",
             "port": 5002,
-            "path": "services/car-service/app.py",
+            "path": "services/car_service/app.py",
             "url": "http://localhost:5002"
         },
         {
             "name": "Rental Service",
             "port": 5003,
-            "path": "services/rental-service/app.py",
+            "path": "services/rental_service/app.py",
             "url": "http://localhost:5003"
         }
     ]
@@ -75,10 +75,10 @@ def main():
                 })
                 services.append(config)
         else:
-            print(f"⚠️  {config['name']} not found at {config['path']}")
+            print(f"💥  {config['name']} not found at {config['path']}")
 
     if not processes:
-        print("❌ No services could be started!")
+        print("✗ No services could be started!")
         return
 
     print("\n🎯 Services Overview:")
@@ -88,7 +88,7 @@ def main():
         print(f"  Health: {service['url']}/health")
         print(f"  Docs: {service['url']}/docs")
 
-    print(f"\n✅ Started {len(processes)} service(s)")
+    print(f"\n✓ Started {len(processes)} service(s)")
     print("📱 Press Ctrl+C to stop all services")
 
     try:
@@ -100,7 +100,7 @@ def main():
                     processes.remove(p)
 
             if not processes:
-                print("❌ All services stopped")
+                print("✗ All services stopped")
                 break
 
     except KeyboardInterrupt:
@@ -108,10 +108,10 @@ def main():
         for p in processes:
             try:
                 p["process"].terminate()
-                print(f"✅ Stopped {p['name']}")
+                print(f"✓ Stopped {p['name']}")
             except:
                 pass
-        print("👋 All services stopped")
+        print("All services stopped")
 
 
 if __name__ == "__main__":
