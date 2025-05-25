@@ -1,159 +1,201 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
+from pydantic import BaseModel, EmailStr, Field
+from typing import List, Optional
 import os
-import time
-import psutil
+import uuid
 from datetime import datetime, timezone
-import logging
-from typing import Dict, Any
+from dotenv import load_dotenv
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import sys
 
-app = FastAPI(
-    title="User Management Service",
-    description="Microservice for user management in Car Rental System",
-    version="1.0.0"
-)
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from azure_database_client import azure_client
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+load_dotenv()
 
-# In-memory storage for demo (replace with database later)
-users_db = {}
-request_count = 0
-start_time = time.time()
+app = FastAPI(title="User Service", version="1.0.0")
 
 
-# Middleware to count requests
-@app.middleware("http")
-async def count_requests(request, call_next):
-    global request_count
-    request_count += 1
-    start_time_req = time.time()
-
-    response = await call_next(request)
-
-    process_time = time.time() - start_time_req
-    logger.info(f"Request to {request.url.path} took {process_time:.4f} seconds")
-
-    return response
+class User(BaseModel):
+    user_id: Optional[str] = None
+    email: EmailStr
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
-# Health check endpoint - REQUIRED for 5 points
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+
+
+class UserResponse(BaseModel):
+    user_id: str
+    email: str
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 @app.get("/health")
-async def health_check() -> Dict[str, Any]:
-    """Health check endpoint to verify service is running"""
-    return {
-        "status": "healthy",
-        "service": "user-service",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "version": "1.0.0"
-    }
-
-
-# Ping endpoint - REQUIRED for 5 points
-@app.get("/ping")
-async def ping() -> Dict[str, str]:
-    """Simple ping endpoint"""
-    return {"message": "pong", "service": "user-service"}
-
-
-# Metrics endpoint - REQUIRED for 5 points
-@app.get("/metrics")
-async def get_metrics() -> Dict[str, Any]:
-    """Application metrics endpoint"""
-    uptime = time.time() - start_time
-
-    # Get system metrics
-    cpu_percent = psutil.cpu_percent()
-    memory = psutil.virtual_memory()
-
-    return {
-        "service": "user-service",
-        "uptime_seconds": round(uptime, 2),
-        "request_count": request_count,
-        "requests_per_second": round(request_count / uptime, 2) if uptime > 0 else 0,
-        "memory_usage_percent": memory.percent,
-        "cpu_usage_percent": cpu_percent,
-        "active_users": len(users_db),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-
-
-# Root endpoint
-@app.get("/")
-async def root():
-    return {
-        "message": "User Management Service",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "ping": "/ping",
-            "metrics": "/metrics",
-            "users": "/users",
-            "register": "/register"
-        }
-    }
-
-
-# Get users endpoint - REQUIRED for API points
-@app.get("/users")
-async def get_users():
-    """Get all users - demo endpoint"""
-    logger.info("Fetching all users")
-    return {
-        "users": list(users_db.values()),
-        "total_count": len(users_db)
-    }
-
-
-# User registration endpoint - REQUIRED for API points
-@app.post("/register")
-async def register_user(user_data: dict):
-    """Register a new user"""
+async def health_check():
+    """Health check endpoint"""
     try:
-        # Basic validation
-        if "email" not in user_data or "name" not in user_data:
-            raise HTTPException(status_code=400, detail="Email and name are required")
+        azure_client.log_to_azure("user-service", "INFO", "Health check passed")
 
-        email = user_data["email"]
-
-        # Check if user already exists
-        if email in users_db:
-            raise HTTPException(status_code=409, detail="User already exists")
-
-        # Create user (in real app, encrypt PII data)
-        user = {
-            "id": len(users_db) + 1,
-            "email": email,  # In production: encrypt this
-            "name": user_data["name"],  # In production: encrypt this
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-
-        users_db[email] = user
-        logger.info(f"User registered: {email}")
+        azure_info = azure_client.get_connection_info()
 
         return {
-            "message": "User registered successfully",
-            "user_id": user["id"]
+            "status": "healthy",
+            "service": "user-service",
+            "azure_connection": azure_info,
+            "timestamp": datetime.now(timezone.utc)
         }
+    except Exception as e:
+        azure_client.log_to_azure("user-service", "ERROR", f"Health check failed: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "service": "user-service",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc)
+        }
+
+
+@app.get("/ping")
+async def ping():
+    """Ping endpoint"""
+    return {
+        "message": "pong",
+        "service": "user-service",
+        "timestamp": datetime.now(timezone.utc)
+    }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Metrics endpoint with Azure data"""
+    try:
+        users = azure_client.get_users()
+        user_count = len(users)
+
+        metrics_data = {
+            "service": "user-service",
+            "timestamp": datetime.now(timezone.utc),
+            "metrics": {
+                "total_users": user_count,
+                "recent_registrations_24h": 0,  # TODO: реальная логика
+                "status": "operational",
+                "data_source": "azure_sql_database"
+            }
+        }
+
+        azure_client.log_to_azure("user-service", "INFO", "Metrics requested")
+        return metrics_data
+
+    except Exception as e:
+        azure_client.log_to_azure("user-service", "ERROR", f"Metrics endpoint failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+
+
+@app.get("/users", response_model=List[UserResponse])
+async def get_all_users():
+    """Get all users from Azure SQL Database"""
+    try:
+        users_data = azure_client.get_users()
+        users = [UserResponse(**user_data) for user_data in users_data]
+
+        azure_client.log_to_azure("user-service", "INFO", f"Retrieved {len(users)} users from Azure SQL")
+        return users
+    except Exception as e:
+        azure_client.log_to_azure("user-service", "ERROR", f"Failed to get users: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve users: {str(e)}")
+
+
+@app.get("/users/{user_id}", response_model=UserResponse)
+async def get_user(user_id: str):
+    """Get user by ID from Azure SQL Database"""
+    try:
+        user_data = azure_client.get_user_by_id(user_id)
+
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user = UserResponse(**user_data)
+        azure_client.log_to_azure("user-service", "INFO", f"Retrieved user {user_id} from Azure SQL", user_id)
+        return user
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error registering user: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        azure_client.log_to_azure("user-service", "ERROR", f"Failed to get user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve user: {str(e)}")
+
+
+@app.post("/users", response_model=UserResponse)
+async def create_user(user: UserCreate):
+    """Create new user in Azure SQL Database"""
+    try:
+        existing_users = azure_client.get_users()
+        for existing_user in existing_users:
+            if existing_user["email"] == user.email:
+                raise HTTPException(status_code=400, detail="Email already registered")
+
+        user_id = str(uuid.uuid4())
+        new_user_data = {
+            "user_id": user_id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "phone": user.phone
+        }
+
+        created_user_data = azure_client.create_user(new_user_data)
+        created_user = UserResponse(**created_user_data)
+
+        azure_client.log_to_azure("user-service", "INFO", f"Created new user {user_id} in Azure SQL", user_id)
+        return created_user
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        azure_client.log_to_azure("user-service", "ERROR", f"Failed to create user: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+
+
+@app.get("/users/search/{email}")
+async def search_user_by_email(email: str):
+    """Search user by email in Azure SQL Database"""
+    try:
+        all_users = azure_client.get_users()
+        matching_users = []
+
+        for user_data in all_users:
+            if email.lower() in user_data["email"].lower():
+                user = UserResponse(**user_data)
+                matching_users.append(user)
+
+        azure_client.log_to_azure("user-service", "INFO",
+                                  f"Search by email '{email}' returned {len(matching_users)} results from Azure SQL")
+        return {"query": email, "results": matching_users, "count": len(matching_users)}
+
+    except Exception as e:
+        azure_client.log_to_azure("user-service", "ERROR", f"Failed to search users by email: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
+    import uvicorn
+
+    port = int(os.getenv("USER_SERVICE_PORT", 5001))
+    azure_client.log_to_azure("user-service", "INFO", f"Starting User Service on port {port}")
+    print(f"🚀 Starting User Service with Azure SQL on http://localhost:{port}")
+    print(f"📚 API Documentation: http://localhost:{port}/docs")
+    print(f"❤️  Health Check: http://localhost:{port}/health")
     uvicorn.run(app, host="0.0.0.0", port=port)

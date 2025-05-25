@@ -1,5 +1,3 @@
-# Simplified Azure DevOps Pipeline for Car Rental System
-# 3 stages: Build, Test, Deploy (required for 5 points)
 
 trigger:
   branches:
@@ -11,7 +9,7 @@ variables:
   workingDirectory: 'services/user-service'
 
 stages:
-# STAGE 1: BUILD (required)
+# STAGE 1: BUILD
 - stage: Build
   displayName: 'Build Stage'
   jobs:
@@ -45,7 +43,7 @@ stages:
         ArtifactName: 'car-rental-app'
         publishLocation: 'Container'
 
-# STAGE 2: TEST (required)
+# STAGE 2: TEST
 - stage: Test
   displayName: 'Test Stage'
   dependsOn: Build
@@ -100,7 +98,7 @@ stages:
         "
       displayName: 'Run application tests'
 
-# STAGE 3: DEPLOY (required)
+# STAGE 3: DEPLOY
 - stage: Deploy
   displayName: 'Deploy Stage'
   dependsOn: Test
