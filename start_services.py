@@ -36,10 +36,6 @@ def main():
     print("🏁 Car Rental System - Starting All Services")
     print("=" * 50)
 
-    if not Path(".env").exists():
-        print("✗ .env file not found! Please create it first.")
-        return
-
     services = []
     processes = []
 

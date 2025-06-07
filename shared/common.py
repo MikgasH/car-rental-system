@@ -3,10 +3,9 @@ from pydantic import BaseModel
 from datetime import datetime, timezone
 from typing import Dict, Any
 import os
-import sys
+from dotenv import load_dotenv
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from azure_database_client import azure_client
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 
 class BaseService:
@@ -28,17 +27,12 @@ class BaseService:
         async def health_check():
             """Health check endpoint"""
             try:
-                azure_client.log_to_azure(self.service_name.lower(), "INFO", "Health check requested")
-                azure_info = azure_client.get_connection_info()
-
                 return {
                     "status": "healthy",
                     "service": self.service_name.lower(),
-                    "azure_connection": azure_info,
                     "timestamp": datetime.now(timezone.utc)
                 }
             except Exception as e:
-                azure_client.log_to_azure(self.service_name.lower(), "ERROR", f"Health check failed: {str(e)}")
                 return {
                     "status": "unhealthy",
                     "service": self.service_name.lower(),
@@ -74,11 +68,9 @@ class BaseService:
                     }
                 }
 
-                azure_client.log_to_azure(self.service_name.lower(), "INFO", "Metrics requested")
                 return metrics_data
 
             except Exception as e:
-                azure_client.log_to_azure(self.service_name.lower(), "ERROR", f"Metrics endpoint failed: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
 
     def get_app(self):
@@ -106,20 +98,20 @@ class ErrorHandler:
     def handle_azure_error(service_name: str, operation: str, error: Exception):
         """Handle Azure-related errors"""
         error_msg = f"Azure operation failed in {operation}: {str(error)}"
-        azure_client.log_to_azure(service_name, "ERROR", error_msg)
+        print(f"ERROR [{service_name}]: {error_msg}")
         raise HTTPException(status_code=500, detail=f"Database operation failed: {str(error)}")
 
     @staticmethod
     def handle_not_found(service_name: str, resource_type: str, resource_id: str):
         """Handle resource not found errors"""
         error_msg = f"{resource_type} {resource_id} not found"
-        azure_client.log_to_azure(service_name, "WARN", error_msg)
+        print(f"WARN [{service_name}]: {error_msg}")
         raise HTTPException(status_code=404, detail=f"{resource_type} not found")
 
     @staticmethod
     def handle_validation_error(service_name: str, validation_msg: str):
         """Handle validation errors"""
-        azure_client.log_to_azure(service_name, "WARN", f"Validation error: {validation_msg}")
+        print(f"WARN [{service_name}]: Validation error: {validation_msg}")
         raise HTTPException(status_code=400, detail=validation_msg)
 
 
@@ -164,19 +156,19 @@ class ServiceLogger:
         message = f"{operation}"
         if details:
             message += f": {details}"
-        azure_client.log_to_azure(service_name, "INFO", message, user_id)
+        print(f"INFO [{service_name}]: {message}" + (f" (user: {user_id})" if user_id else ""))
 
     @staticmethod
     def log_error(service_name: str, operation: str, error: str, user_id: str = None):
         """Log service error"""
         message = f"{operation} failed: {error}"
-        azure_client.log_to_azure(service_name, "ERROR", message, user_id)
+        print(f"ERROR [{service_name}]: {message}" + (f" (user: {user_id})" if user_id else ""))
 
     @staticmethod
     def log_warning(service_name: str, operation: str, warning: str, user_id: str = None):
         """Log service warning"""
         message = f"{operation} warning: {warning}"
-        azure_client.log_to_azure(service_name, "WARN", message, user_id)
+        print(f"WARN [{service_name}]: {message}" + (f" (user: {user_id})" if user_id else ""))
 
 
 def create_service_app(service_name: str, description: str = None):
@@ -188,9 +180,6 @@ def create_service_app(service_name: str, description: str = None):
 def run_service(app: FastAPI, service_name: str, default_port: int):
     """Standard service runner"""
     import uvicorn
-    from dotenv import load_dotenv
-
-    load_dotenv()
 
     port = int(os.getenv(f"{service_name.upper()}_SERVICE_PORT", default_port))
 

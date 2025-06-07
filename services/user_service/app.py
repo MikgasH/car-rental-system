@@ -1,14 +1,16 @@
 from fastapi import HTTPException
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
 import uuid
 from datetime import datetime
-from dotenv import load_dotenv
-
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from azure_database_client import azure_client
+current_dir = os.path.dirname(__file__)
+project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
+sys.path.insert(0, project_root)
+
+from services.user_service.database import UserDatabase
+
 from shared.common import (
     create_service_app,
     run_service,
@@ -16,44 +18,51 @@ from shared.common import (
     DataValidator,
     ServiceLogger
 )
+from shared.encryption import encryptor, PII_FIELDS
 
-load_dotenv()
+db = UserDatabase()
 
 service = create_service_app("User Service", "User management microservice")
 app = service.get_app()
 
+
 class UserCreate(BaseModel):
-    email: EmailStr
-    password: str = Field(..., min_length=6)
-    first_name: str = Field(..., min_length=1, max_length=100)
-    last_name: str = Field(..., min_length=1, max_length=100)
-    phone: Optional[str] = Field(None, max_length=20)
+    first_name: str = Field(..., min_length=1, max_length=50)
+    last_name: str = Field(..., min_length=1, max_length=50)
+    email: str = Field(..., min_length=1, max_length=100)
+    phone: str = Field(..., min_length=1, max_length=20)
+
 
 class UserResponse(BaseModel):
     user_id: str
-    email: str
     first_name: str
     last_name: str
-    phone: Optional[str] = None
+    email: str
+    phone: str
     created_at: datetime
     updated_at: datetime
 
+
 def get_user_metrics():
     """Get user-specific metrics"""
-    users = azure_client.get_users()
+    users = db.get_all_users()
+    total_users = len(users)
+
     return {
-        "total_users": len(users),
-        "recent_registrations_24h": 0  # TODO: implement actual logic
+        "total_users": total_users,
+        "active_users": total_users
     }
 
 service.add_metrics_endpoint(get_user_metrics)
+
 
 @app.get("/users", response_model=List[UserResponse])
 async def get_all_users():
     """Get all users"""
     try:
-        users_data = azure_client.get_users()
-        users = [UserResponse(**user_data) for user_data in users_data]
+        users_data = db.get_all_users()
+        decrypted_users = [encryptor.decrypt_dict(user_data, PII_FIELDS['users']) for user_data in users_data]
+        users = [UserResponse(**user_data) for user_data in decrypted_users]
 
         ServiceLogger.log_operation("user-service", "get_all_users", f"Retrieved {len(users)} users")
         return users
@@ -61,75 +70,114 @@ async def get_all_users():
     except Exception as e:
         ErrorHandler.handle_azure_error("user-service", "get_all_users", e)
 
+
 @app.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(user_id: str):
     """Get user by ID"""
     try:
-        user_data = azure_client.get_user_by_id(user_id)
+        user_data = db.get_user_by_id(user_id)
 
         if not user_data:
             ErrorHandler.handle_not_found("user-service", "User", user_id)
 
-        ServiceLogger.log_operation("user-service", "get_user", f"Retrieved user {user_id}", user_id)
-        return UserResponse(**user_data)
+        decrypted_user_data = encryptor.decrypt_dict(user_data, PII_FIELDS['users'])
+
+        ServiceLogger.log_operation("user-service", "get_user", f"Retrieved user {user_id}")
+        return UserResponse(**decrypted_user_data)
 
     except HTTPException:
         raise
     except Exception as e:
         ErrorHandler.handle_azure_error("user-service", "get_user", e)
 
+
 @app.post("/users", response_model=UserResponse)
 async def create_user(user: UserCreate):
     """Create new user"""
     try:
-        existing_users = azure_client.get_users()
+        existing_users = [encryptor.decrypt_dict(u, PII_FIELDS['users']) for u in db.get_all_users()]
         if DataValidator.check_duplicate_email(user.email, existing_users):
-            ErrorHandler.handle_validation_error("user-service", "Email already registered")
+            ErrorHandler.handle_validation_error("user-service", "Email already exists")
 
         new_user_data = {
             "user_id": str(uuid.uuid4()),
-            "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
+            "email": user.email,
             "phone": user.phone,
-            "password_hash": "temp_hash_123"  # TODO: implement proper hashing
         }
 
-        created_user_data = azure_client.create_user(new_user_data)
+        encrypted_user_data_for_db = encryptor.encrypt_dict(new_user_data, PII_FIELDS['users'])
+
+        created_user_data = db.create_user(encrypted_user_data_for_db)
 
         ServiceLogger.log_operation("user-service", "create_user",
-                                   f"Created user {created_user_data['user_id']}",
-                                   created_user_data['user_id'])
+                                    f"Created user {created_user_data['user_id']}")
 
-        return UserResponse(**created_user_data)
+        return UserResponse(**encryptor.decrypt_dict(created_user_data, PII_FIELDS['users']))
 
     except HTTPException:
         raise
     except Exception as e:
         ErrorHandler.handle_azure_error("user-service", "create_user", e)
 
-@app.get("/users/search/{email}")
-async def search_user_by_email(email: str):
-    """Search user by email"""
+
+@app.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(user_id: str, user: UserCreate):
+    """Update existing user"""
     try:
-        all_users = azure_client.get_users()
-        matching_users = []
+        user_data_from_db = db.get_user_by_id(user_id)
+        if not user_data_from_db:
+            ErrorHandler.handle_not_found("user-service", "User", user_id)
 
-        for user_data in all_users:
-            if email.lower() in user_data["email"].lower():
-                matching_users.append(UserResponse(**user_data))
+        existing_users = [encryptor.decrypt_dict(u, PII_FIELDS['users']) for u in db.get_all_users()]
+        if DataValidator.check_duplicate_email(user.email, existing_users, exclude_user_id=user_id):
+            ErrorHandler.handle_validation_error("user-service", "Email already exists for another user")
 
-        ServiceLogger.log_operation("user-service", "search_users",
-                                   f"Email search '{email}' returned {len(matching_users)} results")
-
-        return {
-            "query": email,
-            "results": matching_users,
-            "count": len(matching_users)
+        updated_user_data = {
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "phone": user.phone,
         }
+        encrypted_updated_user_data_for_db = encryptor.encrypt_dict(updated_user_data, PII_FIELDS['users'])
 
+        success = db.update_user(user_id, encrypted_updated_user_data_for_db)
+
+        if not success:
+            ErrorHandler.handle_not_found("user-service", "User", user_id)
+
+        final_user_data = db.get_user_by_id(user_id)
+
+        ServiceLogger.log_operation("user-service", "update_user",
+                                    f"Updated user {user_id}")
+
+        return UserResponse(**encryptor.decrypt_dict(final_user_data, PII_FIELDS['users']))
+
+    except HTTPException:
+        raise
     except Exception as e:
-        ErrorHandler.handle_azure_error("user-service", "search_users", e)
+        ErrorHandler.handle_azure_error("user-service", "update_user", e)
+
+
+@app.delete("/users/{user_id}")
+async def delete_user(user_id: str):
+    """Delete a user"""
+    try:
+        success = db.delete_user(user_id)
+
+        if not success:
+            ErrorHandler.handle_not_found("user-service", "User", user_id)
+
+        ServiceLogger.log_operation("user-service", "delete_user",
+                                    f"Deleted user {user_id}")
+        return {"message": "User deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        ErrorHandler.handle_azure_error("user-service", "delete_user", e)
+
 
 if __name__ == "__main__":
     run_service(app, "USER", 5001)
