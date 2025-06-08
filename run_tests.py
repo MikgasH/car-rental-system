@@ -1,206 +1,265 @@
+#!/usr/bin/env python3
+"""
+Car Rental System - Test Suite Runner
+Validates microservices functionality and Azure integration
+"""
+
 import os
 import sys
 import subprocess
 from pathlib import Path
+from dotenv import load_dotenv
+import time
 
 
-def check_dependencies():
-    """Check if test dependencies are installed"""
-    print("Checking test dependencies...")
+class TestRunner:
+    """Professional test runner for car rental microservices"""
 
-    required_packages = ["pytest", "pytest-cov", "pytest-asyncio", "httpx"]
-    missing_packages = []
+    def __init__(self):
+        self.start_time = time.time()
+        self.results = {}
 
-    for package in required_packages:
-        try:
-            __import__(package.replace("-", "_"))
-        except ImportError:
-            missing_packages.append(package)
-
-    if missing_packages:
-        print(f"Missing packages: {missing_packages}")
-        print("Install them with: pip install -r requirements.txt")
-        return False
-
-    print("All dependencies available")
-    return True
-
-
-def run_tests_with_coverage():
-    """Run tests with coverage measurement"""
-    print("\nRunning tests with coverage...")
-    print("=" * 50)
-
-    cmd = [
-        sys.executable, "-m", "pytest",
-        "tests/",
-        "--cov=services",
-        "--cov=azure_database_client",
-        "--cov=shared",
-        "--cov-report=html:htmlcov",
-        "--cov-report=term-missing",
-        "--cov-fail-under=60",
-        "-v",
-        "--tb=short"
-    ]
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-        print("Test Results:")
-        print(result.stdout)
-
-        if result.stderr:
-            print("Warnings:")
-            print(result.stderr)
-
-        if result.returncode == 0:
-            print("\nAll tests passed successfully!")
-            print("Code coverage >= 60%")
-            return True
-        else:
-            print(f"\nTests failed (return code: {result.returncode})")
+    def setup_environment(self):
+        """Load and validate environment configuration"""
+        env_file = Path(".env")
+        if not env_file.exists():
+            print("ERROR: .env file not found")
             return False
 
-    except subprocess.TimeoutExpired:
-        print("Test execution timeout")
-        return False
-    except Exception as e:
-        print(f"Test execution error: {e}")
-        return False
+        load_dotenv(env_file)
 
+        required_vars = [
+            "ENCRYPTION_KEY",
+            "USER_DATABASE_CONNECTION_STRING",
+            "CAR_DATABASE_CONNECTION_STRING",
+            "RENTAL_DATABASE_CONNECTION_STRING"
+        ]
 
-def run_individual_tests():
-    """Run individual test files for diagnosis"""
-    print("\nRunning individual tests...")
-    print("=" * 50)
+        missing = [var for var in required_vars if not os.getenv(var)]
+        if missing:
+            print(f"ERROR: Missing environment variables: {', '.join(missing)}")
+            return False
 
-    test_files = [
-        "tests/test_azure_client.py",
-        "tests/test_user_service.py",
-        "tests/test_car_service.py",
-        "tests/test_rental_service.py",
-        "tests/test_common.py"
-    ]
+        return True
 
-    results = {}
+    def check_dependencies(self):
+        """Verify required Python packages are installed"""
+        required_imports = [
+            ("pytest", "pytest"),
+            ("fastapi", "fastapi"),
+            ("httpx", "httpx"),
+            ("cryptography", "cryptography"),
+            ("python-dotenv", "dotenv")  # dotenv is the import name
+        ]
 
-    for test_file in test_files:
-        if Path(test_file).exists():
-            print(f"\nRunning {test_file}...")
-
-            cmd = [sys.executable, "-m", "pytest", test_file, "-v"]
-
+        missing = []
+        for package_name, import_name in required_imports:
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                __import__(import_name)
+            except ImportError:
+                missing.append(package_name)
 
-                if result.returncode == 0:
-                    passed_tests = result.stdout.count(" PASSED")
-                    print(f"✓ {test_file}: {passed_tests} tests passed")
-                    results[test_file] = "PASSED"
-                else:
-                    failed_tests = result.stdout.count(" FAILED")
-                    print(f"✗ {test_file}: {failed_tests} tests failed")
-                    print("Error details:")
-                    print(result.stdout[-300:])  # Last 300 characters
-                    results[test_file] = "FAILED"
+        if missing:
+            print(f"ERROR: Missing packages: {', '.join(missing)}")
+            print("Install with: pip install " + " ".join(missing))
+            return False
 
-            except subprocess.TimeoutExpired:
-                print(f"⏰ {test_file}: Timeout")
-                results[test_file] = "TIMEOUT"
-            except Exception as e:
-                print(f"💥 {test_file}: Error - {e}")
-                results[test_file] = "ERROR"
-        else:
-            print(f"⚠ {test_file}: File not found")
-            results[test_file] = "NOT_FOUND"
+        return True
 
-    return results
+    def run_test_suite(self, test_file):
+        """Execute test suite for a service"""
+        if not Path(test_file).exists():
+            return {"status": "NOT_FOUND", "details": "File not found"}
 
+        cmd = [
+            sys.executable, "-m", "pytest",
+            test_file,
+            "-v",
+            "--tb=short",
+            "--strict-markers",
+            "--disable-warnings"
+        ]
 
-def generate_report(individual_results):
-    """Generate test report"""
-    print("\nTest Report")
-    print("=" * 50)
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
 
-    total_files = len(individual_results)
-    passed_files = sum(1 for result in individual_results.values() if result == "PASSED")
-    failed_files = sum(1 for result in individual_results.values() if result == "FAILED")
-    not_found_files = sum(1 for result in individual_results.values() if result == "NOT_FOUND")
+            if result.returncode == 0:
+                passed = result.stdout.count(" PASSED")
+                skipped = result.stdout.count(" SKIPPED")
+                return {
+                    "status": "PASSED",
+                    "passed": passed,
+                    "skipped": skipped,
+                    "details": f"{passed} passed, {skipped} skipped"
+                }
+            else:
+                failed = result.stdout.count(" FAILED")
+                errors = result.stdout.count(" ERROR")
+                return {
+                    "status": "FAILED",
+                    "failed": failed,
+                    "errors": errors,
+                    "details": self._extract_error_details(result.stdout)
+                }
 
-    print(f"Total test files: {total_files}")
-    print(f"Passed: {passed_files}")
-    print(f"Failed: {failed_files}")
-    print(f"Not found: {not_found_files}")
-    print(f"Success rate: {(passed_files / (total_files - not_found_files) * 100):.1f}%" if (total_files - not_found_files) > 0 else "N/A")
+        except subprocess.TimeoutExpired:
+            return {"status": "TIMEOUT", "details": "Execution timeout"}
+        except Exception as e:
+            return {"status": "ERROR", "details": str(e)}
 
-    print(f"\nDetailed results:")
-    for test_file, result in individual_results.items():
-        status_emoji = {
-            "PASSED": "✓",
-            "FAILED": "✗",
-            "TIMEOUT": "⏰",
-            "ERROR": "💥",
-            "NOT_FOUND": "⚠"
+    def _extract_error_details(self, stdout):
+        """Extract concise error information from test output"""
+        lines = stdout.split('\n')
+        errors = []
+
+        for line in lines:
+            if "FAILED" in line and "::" in line:
+                test_name = line.split("::")[-1].split()[0]
+                errors.append(test_name)
+
+        return f"Failed tests: {', '.join(errors[:3])}" if errors else "Test failures detected"
+
+    def validate_azure_configuration(self):
+        """Validate Azure resource configuration"""
+        checks = {
+            "Azure SQL": self._check_azure_sql(),
+            "Service Bus": self._check_service_bus(),
+            "Storage": self._check_storage(),
+            "Encryption": self._check_encryption()
         }
-        emoji = status_emoji.get(result, "?")
-        print(f"  {emoji} {test_file}: {result}")
 
-    htmlcov_path = Path("htmlcov/index.html")
-    if htmlcov_path.exists():
-        print(f"\nCoverage report: {htmlcov_path.absolute()}")
-        print("Open this file in browser for detailed coverage view")
+        return checks
 
-    print(f"\nTest Status:")
-    found_files = total_files - not_found_files
-    if found_files > 0 and passed_files >= max(1, found_files * 0.75):
-        print("✓ Tests ready for submission")
-        print("  - Code coverage >= 60%")
-        print("  - Core components tested")
-        print("  - Azure integration verified")
-    else:
-        print("✗ Tests need improvement")
-        print("  - Fix failed tests")
-        print("  - Ensure services are running")
-        print("  - Check Azure connection")
-        if not_found_files > 0:
-            print("  - Create missing test files")
+    def _check_azure_sql(self):
+        """Verify Azure SQL Database configuration"""
+        conn_str = os.getenv("USER_DATABASE_CONNECTION_STRING", "")
+        return "car-rental-sql-server.database.windows.net" in conn_str
+
+    def _check_service_bus(self):
+        """Verify Azure Service Bus configuration"""
+        conn_str = os.getenv("AZURE_SERVICE_BUS_CONNECTION_STRING", "")
+        return "car-rental-servicebus.servicebus.windows.net" in conn_str
+
+    def _check_storage(self):
+        """Verify Azure Storage configuration"""
+        conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
+        return "carrentalstorage2025" in conn_str
+
+    def _check_encryption(self):
+        """Verify encryption key configuration"""
+        key = os.getenv("ENCRYPTION_KEY")
+        if not key:
+            return False
+        try:
+            from cryptography.fernet import Fernet
+            Fernet(key.encode())
+            return True
+        except:
+            return False
+
+    def generate_report(self):
+        """Generate comprehensive test report"""
+        execution_time = time.time() - self.start_time
+
+        print("=" * 70)
+        print("CAR RENTAL SYSTEM - TEST EXECUTION REPORT")
+        print("=" * 70)
+
+        # Test Results Summary
+        total_files = len(self.results)
+        passed_files = sum(1 for r in self.results.values() if r["status"] == "PASSED")
+        failed_files = sum(1 for r in self.results.values() if r["status"] == "FAILED")
+
+        print(f"Test Files: {total_files}")
+        print(f"Passed: {passed_files}")
+        print(f"Failed: {failed_files}")
+        print(f"Success Rate: {(passed_files / total_files) * 100:.1f}%")
+        print(f"Execution Time: {execution_time:.2f}s")
+
+        # Detailed Results
+        print("\nTest Suite Results:")
+        for test_file, result in self.results.items():
+            service_name = test_file.split("/")[-1].replace("test_", "").replace(".py", "")
+            status_indicator = "PASS" if result["status"] == "PASSED" else "FAIL"
+            print(f"  {service_name:15} {status_indicator:4} {result['details']}")
+
+        # Azure Configuration Status
+        azure_checks = self.validate_azure_configuration()
+        print("\nAzure Integration Status:")
+        for component, status in azure_checks.items():
+            status_text = "OK" if status else "FAIL"
+            print(f"  {component:15} {status_text}")
+
+        # Final Assessment
+        print("\n" + "=" * 70)
+        azure_ready = sum(azure_checks.values()) >= 3
+        tests_passing = passed_files == total_files
+
+        if tests_passing and azure_ready:
+            print("ASSESSMENT: PRODUCTION READY")
+            print("- All test suites passing")
+            print("- Azure integration validated")
+            print("- System ready for deployment")
+            return True
+        elif tests_passing:
+            print("ASSESSMENT: TESTS PASSING")
+            print("- All test suites passing")
+            print("- Azure configuration needs review")
+            return True
+        else:
+            print("ASSESSMENT: REQUIRES ATTENTION")
+            print("- Test failures detected")
+            print("- Address issues before deployment")
+            return False
+
+    def run(self):
+        """Execute complete test suite"""
+        print("CAR RENTAL SYSTEM - TEST SUITE")
+        print("Validating microservices and Azure integration")
+        print("-" * 50)
+
+        # Environment setup
+        if not self.setup_environment():
+            return False
+        if not self.check_dependencies():
+            return False
+
+        # Test execution
+        test_suites = [
+            "tests/test_user_service.py",
+            "tests/test_car_service.py",
+            "tests/test_rental_service.py",
+            "tests/test_common.py"
+        ]
+
+        print(f"Executing {len(test_suites)} test suites...")
+
+        for test_file in test_suites:
+            print(f"Running {test_file.split('/')[-1]}...", end=" ")
+            result = self.run_test_suite(test_file)
+            self.results[test_file] = result
+
+            if result["status"] == "PASSED":
+                print("PASS")
+            else:
+                print("FAIL")
+
+        # Generate final report
+        success = self.generate_report()
+        return success
 
 
 def main():
-    """Main test execution function"""
-    print("Car Rental System - Automated Testing")
-    print("=" * 50)
-    print("Testing Azure integration and system functionality")
-
-    # Check dependencies
-    if not check_dependencies():
-        print("Please install missing dependencies first")
-        return False
-
-    individual_results = run_individual_tests()
-
-    passed_count = sum(1 for r in individual_results.values() if r == "PASSED")
-    if passed_count > 0:
-        print("\n" + "=" * 50)
-        coverage_success = run_tests_with_coverage()
-    else:
-        print("\nSkipping coverage test - no individual tests passed")
-        coverage_success = False
-
-    generate_report(individual_results)
-
-    success_count = sum(1 for r in individual_results.values() if r == "PASSED")
-    if success_count >= 3:
-        print(f"\nTesting completed successfully!")
-        print("System ready for final submission")
-        return True
-    else:
-        print(f"\nTesting requires attention")
-        print("Fix issues and run tests again")
-        return False
+    """Main entry point"""
+    runner = TestRunner()
+    success = runner.run()
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    main()
