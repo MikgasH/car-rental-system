@@ -296,6 +296,79 @@ async def fetch_car_data(car_id: str):
         return None
 
 
+@app.get("/test-logging")
+async def test_azure_logging():
+    """Test endpoint to demonstrate Azure logging functionality"""
+    import uuid
+
+    test_user_id = str(uuid.uuid4())
+    test_rental_id = str(uuid.uuid4())
+
+    ServiceLogger.log_operation("rental-service", "test_logging", "Testing Azure Storage and Service Bus logging",
+                                test_user_id)
+    ServiceLogger.log_warning("rental-service", "test_logging", "Rental validation warning - date conflict detected",
+                              test_user_id)
+    ServiceLogger.log_error("rental-service", "test_logging",
+                            "Payment processing failed - external service unavailable", test_user_id)
+
+    ServiceLogger.log_operation("rental-service", "rental_created", f"New rental booking created: {test_rental_id}",
+                                test_user_id)
+    ServiceLogger.log_operation("rental-service", "cross_service_validation", "User and car validation completed")
+    ServiceLogger.log_operation("rental-service", "service_bus_message", "Car status update message sent to queue")
+    ServiceLogger.log_operation("rental-service", "business_logic",
+                                "Rental amount calculation and date validation completed")
+
+    return {
+        "message": "Rental Service Azure logging test completed successfully",
+        "logs_sent_to": [
+            "Azure Blob Storage (container: logs)",
+            "Azure Service Bus (queue: application-logs)"
+        ],
+        "log_types_tested": ["INFO", "WARNING", "ERROR"],
+        "rental_service_operations": [
+            "rental_created",
+            "cross_service_validation",
+            "service_bus_message",
+            "business_logic"
+        ],
+        "test_user_id": test_user_id,
+        "test_rental_id": test_rental_id,
+        "storage_account": "carrentalstorage2025",
+        "container": "logs",
+        "queue": "application-logs",
+        "service": "rental-service",
+        "status": "success"
+    }
+
+
+@app.get("/logs/recent")
+async def get_recent_logs():
+    """Get recent logs from Azure Storage for monitoring"""
+    try:
+        from shared.azure_logger import azure_logger
+
+        recent_logs = azure_logger.get_logs_from_storage("rental-service", limit=10)
+
+        return {
+            "service": "rental-service",
+            "recent_logs_count": len(recent_logs),
+            "logs": recent_logs[:5],
+            "total_available": len(recent_logs),
+            "storage_location": "Azure Blob Storage - carrentalstorage2025/logs",
+            "service_operations": [
+                "rental management",
+                "cross-service integration",
+                "service bus messaging",
+                "business logic validation"
+            ]
+        }
+    except Exception as e:
+        return {
+            "service": "rental-service",
+            "error": str(e),
+            "message": "Could not retrieve logs from Azure Storage"
+        }
+
 if __name__ == "__main__":
     import httpx
     run_service(app, "RENTAL", 5003)

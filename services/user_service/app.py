@@ -178,6 +178,58 @@ async def delete_user(user_id: str):
     except Exception as e:
         ErrorHandler.handle_azure_error("user-service", "delete_user", e)
 
+@app.get("/test-logging")
+async def test_azure_logging():
+    """Test endpoint to demonstrate Azure logging functionality"""
+    import uuid
+
+    test_user_id = str(uuid.uuid4())
+
+    # Test different log levels
+    ServiceLogger.log_operation("user-service", "test_logging", "Testing Azure Storage and Service Bus logging",
+                                test_user_id)
+    ServiceLogger.log_warning("user-service", "test_logging", "This is a test warning message", test_user_id)
+    ServiceLogger.log_error("user-service", "test_logging", "This is a test error message", test_user_id)
+
+    # Test real operations logging
+    ServiceLogger.log_operation("user-service", "health_check", "Azure logging system operational")
+    ServiceLogger.log_operation("user-service", "metrics_generated", "System metrics collected")
+
+    return {
+        "message": "Azure logging test completed successfully",
+        "logs_sent_to": [
+            "Azure Blob Storage (container: logs)",
+            "Azure Service Bus (queue: application-logs)"
+        ],
+        "log_types_tested": ["INFO", "WARNING", "ERROR"],
+        "test_user_id": test_user_id,
+        "storage_account": "carrentalstorage2025",
+        "container": "logs",
+        "queue": "application-logs",
+        "status": "success"
+    }
+
+
+@app.get("/logs/recent")
+async def get_recent_logs():
+    """Get recent logs from Azure Storage for monitoring"""
+    try:
+        from shared.azure_logger import azure_logger
+
+        recent_logs = azure_logger.get_logs_from_storage("user-service", limit=10)
+
+        return {
+            "service": "user-service",
+            "recent_logs_count": len(recent_logs),
+            "logs": recent_logs,
+            "storage_location": "Azure Blob Storage - carrentalstorage2025/logs"
+        }
+    except Exception as e:
+        return {
+            "service": "user-service",
+            "error": str(e),
+            "message": "Could not retrieve logs from Azure Storage"
+        }
 
 if __name__ == "__main__":
     run_service(app, "USER", 5001)

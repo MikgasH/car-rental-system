@@ -304,6 +304,62 @@ def start_servicebus_listener():
     """Starts the Service Bus listener in a separate thread."""
     asyncio.run(receive_messages())
 
+@app.get("/test-logging")
+async def test_azure_logging():
+    """Test endpoint to demonstrate Azure logging functionality"""
+    import uuid
+
+    test_user_id = str(uuid.uuid4())
+
+    ServiceLogger.log_operation("car-service", "test_logging", "Testing Azure Storage and Service Bus logging",
+                                test_user_id)
+    ServiceLogger.log_warning("car-service", "test_logging", "Car inventory warning - low stock detected", test_user_id)
+    ServiceLogger.log_error("car-service", "test_logging", "Car status update failed - database connection issue",
+                            test_user_id)
+
+    ServiceLogger.log_operation("car-service", "inventory_check", "Daily inventory validation completed")
+    ServiceLogger.log_operation("car-service", "status_update", "Car availability status synchronized")
+    ServiceLogger.log_operation("car-service", "service_bus_listener", "Message processing operational")
+
+    return {
+        "message": "Car Service Azure logging test completed successfully",
+        "logs_sent_to": [
+            "Azure Blob Storage (container: logs)",
+            "Azure Service Bus (queue: application-logs)"
+        ],
+        "log_types_tested": ["INFO", "WARNING", "ERROR"],
+        "car_service_operations": ["inventory_check", "status_update", "service_bus_listener"],
+        "test_user_id": test_user_id,
+        "storage_account": "carrentalstorage2025",
+        "container": "logs",
+        "queue": "application-logs",
+        "service": "car-service",
+        "status": "success"
+    }
+
+
+@app.get("/logs/recent")
+async def get_recent_logs():
+    """Get recent logs from Azure Storage for monitoring"""
+    try:
+        from shared.azure_logger import azure_logger
+
+        recent_logs = azure_logger.get_logs_from_storage("car-service", limit=10)
+
+        return {
+            "service": "car-service",
+            "recent_logs_count": len(recent_logs),
+            "logs": recent_logs[:5],
+            "total_available": len(recent_logs),
+            "storage_location": "Azure Blob Storage - carrentalstorage2025/logs",
+            "service_operations": ["car inventory", "status updates", "service bus messaging"]
+        }
+    except Exception as e:
+        return {
+            "service": "car-service",
+            "error": str(e),
+            "message": "Could not retrieve logs from Azure Storage"
+        }
 
 if __name__ == "__main__":
     listener_thread = threading.Thread(target=start_servicebus_listener, daemon=True)

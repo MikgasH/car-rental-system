@@ -148,27 +148,45 @@ class DataValidator:
 
 
 class ServiceLogger:
-    """Service-specific logging utilities"""
+    """Enhanced ServiceLogger with Azure Storage and Service Bus integration"""
 
     @staticmethod
     def log_operation(service_name: str, operation: str, details: str = None, user_id: str = None):
-        """Log service operation"""
+        """Log service operation to console and Azure"""
         message = f"{operation}"
         if details:
             message += f": {details}"
         print(f"INFO [{service_name}]: {message}" + (f" (user: {user_id})" if user_id else ""))
 
+        try:
+            from shared.azure_logger import azure_logger
+            azure_logger.log_operation(service_name, operation, details, user_id, "INFO")
+        except Exception as e:
+            print(f"Azure logging failed: {e}")
+
     @staticmethod
     def log_error(service_name: str, operation: str, error: str, user_id: str = None):
-        """Log service error"""
+        """Log service error to console and Azure"""
         message = f"{operation} failed: {error}"
         print(f"ERROR [{service_name}]: {message}" + (f" (user: {user_id})" if user_id else ""))
 
+        try:
+            from shared.azure_logger import azure_logger
+            azure_logger.log_error(service_name, operation, error, user_id)
+        except Exception as e:
+            print(f"Azure logging failed: {e}")
+
     @staticmethod
     def log_warning(service_name: str, operation: str, warning: str, user_id: str = None):
-        """Log service warning"""
+        """Log service warning to console and Azure"""
         message = f"{operation} warning: {warning}"
         print(f"WARN [{service_name}]: {message}" + (f" (user: {user_id})" if user_id else ""))
+
+        try:
+            from shared.azure_logger import azure_logger
+            azure_logger.log_warning(service_name, operation, warning, user_id)
+        except Exception as e:
+            print(f"Azure logging failed: {e}")
 
 
 def create_service_app(service_name: str, description: str = None):
