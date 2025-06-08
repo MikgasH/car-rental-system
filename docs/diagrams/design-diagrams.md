@@ -25,7 +25,53 @@ Cloud-native microservices system for car rental management built with Python Fa
 - Azure Service Bus message production
 - **Endpoints:** `/rentals`, rental status updates
 
-## 2. Azure Integration
+## 2. Database Tables Diagram
+
+### Users Table:Add commentMore actions
+```sql
+Users (Azure SQL Database)
+├── user_id (PK, UNIQUEIDENTIFIER)
+├── email (NVARCHAR(255), ENCRYPTED)
+├── password_hash (NVARCHAR(255))
+├── first_name (NVARCHAR(100), ENCRYPTED)
+├── last_name (NVARCHAR(100), ENCRYPTED)
+├── phone (NVARCHAR(20), ENCRYPTED)
+├── created_at (DATETIME2)
+└── updated_at (DATETIME2)
+```
+
+### Cars Table
+```sql
+Cars (Azure SQL Database)
+├── car_id (PK, UNIQUEIDENTIFIER)
+├── make (NVARCHAR(50))
+├── model (NVARCHAR(50))
+├── year (INT)
+├── license_plate (NVARCHAR(20), ENCRYPTED)
+├── status (NVARCHAR(20)) -- available/rented/maintenance
+├── daily_rate (DECIMAL(10,2))
+├── location (NVARCHAR(100))
+├── created_at (DATETIME2)
+└── updated_at (DATETIME2)
+```
+
+### Rentals Table:Add commentMore actions
+```sql
+Rentals (Azure SQL Database)
+├── rental_id (PK, UNIQUEIDENTIFIER)
+├── user_id (FK, UNIQUEIDENTIFIER)
+├── car_id (FK, UNIQUEIDENTIFIER)
+├── start_date (DATETIME2)
+├── end_date (DATETIME2)
+├── total_amount (DECIMAL(10,2))
+├── status (NVARCHAR(20)) -- pending/active/completed/cancelled
+├── pickup_location (NVARCHAR(255), ENCRYPTED)
+├── return_location (NVARCHAR(255), ENCRYPTED)
+├── created_at (DATETIME2)
+└── updated_at (DATETIME2)Add commentMore actions
+```
+
+## 3. Azure Integration
 
 ### Azure SQL Database
 - **Server:** car-rental-sql-server.database.windows.net
@@ -44,7 +90,7 @@ Cloud-native microservices system for car rental management built with Python Fa
 - **Purpose:** Application logs and file storage
 - **Integration:** Ready for log aggregation
 
-## 3. Security Implementation
+## 4. Security Implementation
 
 ### Data Encryption
 - **Algorithm:** AES-256 (Fernet)
@@ -56,7 +102,7 @@ Cloud-native microservices system for car rental management built with Python Fa
 - **Current:** Basic service-to-service validation
 - **Planned:** JWT tokens, role-based access control
 
-## 4. Technical Architecture
+## 5. Technical Architecture
 
 ### Technology Stack
 - **Backend:** Python 3.12+ with FastAPI
@@ -86,7 +132,7 @@ Cloud-native microservices system for car rental management built with Python Fa
 2. **Car Service** → Receives message, updates car status
 3. **Cross-Service Calls** → User/Car validation during rental creation
 
-## 5. Testing & Quality Assurance
+## 6. Testing & Quality Assurance
 
 ### Test Coverage
 - **71 total tests** across all services
@@ -102,7 +148,7 @@ Cloud-native microservices system for car rental management built with Python Fa
 - PII encryption verification
 - Cross-service communication
 
-## 6. CI/CD Pipeline
+## 7. CI/CD Pipeline
 
 ### Pipeline Stages
 1. **Build:** Install dependencies, validate structure, create artifacts
@@ -115,7 +161,7 @@ Cloud-native microservices system for car rental management built with Python Fa
 - **Artifacts:** Complete application package
 - **Validation:** Health checks and service verification
 
-## 7. Monitoring & Metrics
+## 8. Monitoring & Metrics
 
 ### Required Endpoints (All Services)
 - `GET /health` - Service health status
@@ -127,7 +173,7 @@ Cloud-native microservices system for car rental management built with Python Fa
 - **Car Service:** Total cars, available/rented/maintenance counts, average daily rate
 - **Rental Service:** Total rentals by status, revenue metrics
 
-## 8. Deployment Architecture
+## 9. Deployment Architecture
 
 ### Azure Resources
 ```
@@ -150,7 +196,7 @@ Azure Resource Group: car-rental-system
 - **Testing:** 100% test suite passing
 - **Documentation:** Complete API documentation
 
-## 9. Business Logic Implementation
+## 10. Business Logic Implementation
 
 ### User Management
 - User registration with encrypted PII
@@ -167,25 +213,3 @@ Azure Resource Group: car-rental-system
 - Amount calculation based on duration
 - Status workflow (pending → active → completed)
 - Cross-service validation for users and cars
-
-## 10. Future Enhancements
-
-### Planned Features
-- JWT authentication system
-- Payment processing integration
-- Real-time notifications
-- Advanced search and filtering
-- Mobile API optimization
-
-### Scalability Considerations
-- Database read replicas
-- Service auto-scaling
-- Caching layer implementation
-- Load balancing optimization
-
----
-
-**System Status:** Production Ready
-**Test Coverage:** 71/71 tests passing
-**Azure Integration:** Fully operational
-**CI/CD:** Automated pipeline configured
